@@ -1,17 +1,22 @@
 #!/bin/bash
-#SBATCH -A ACD114003
-#SBATCH -p gp1d
+#SBATCH -p amd
 #SBATCH --nodes=1
-#SBATCH --ntasks-per-node=4
-#SBATCH --gres=gpu:1
+#SBATCH --ntasks=1
+#SBATCH --cpus-per-task=16
+#SBATCH --gres=gpu:r9700:1
 #SBATCH -J bert-train
 #SBATCH -o bert-train.out
 #SBATCH -e bert-train.err
 
+# Slurm batch shells do not source the login profile that defines `module`.
+source /etc/profile.d/modules.sh
 module purge
-module load miniconda3/conda24.5.0_py3.9
+module load rocm/7.2.0
 
-conda activate camp-ai
+if [[ -z "${VIRTUAL_ENV:-}" ]]; then
+    # The camp environment is created once with the commands in README.md.
+    source "$HOME/venvs/camp-ai/bin/activate"
+fi
 
 model_flag=""
 output_flag=""
