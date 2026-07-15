@@ -1,0 +1,10 @@
+__pycache__/
+*.py[cod]
+
+# Local training and submission artifacts
+train_logs/
+train_checkpoints/
+output_model/
+e2e-*/
+bert-*.out
+bert-*.err
