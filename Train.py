@@ -47,7 +47,8 @@ def main(args):
     # train
     train_args = TrainingArguments(
         output_dir=args.output,
-        overwrite_output_dir=True,
+        # `overwrite_output_dir` was removed from recent Transformers releases.
+        # The output directory is created by the caller for each camp run.
         save_strategy="epoch",
         eval_strategy="epoch",
         per_device_train_batch_size=8,
