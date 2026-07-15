@@ -72,7 +72,7 @@ def main(args):
 
     trainer = Trainer(
         model=model,
-        tokenizer=tokenizer,
+        processing_class=tokenizer,
         args=train_args,
         train_dataset=small_train_dataset,
         eval_dataset=small_eval_dataset,
