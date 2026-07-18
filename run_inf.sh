@@ -3,7 +3,7 @@
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=16
-#SBATCH --gres=gpu:r9700:1
+#SBATCH --gres=gpu:1
 #SBATCH --partition=cscamp
 #SBATCH --time=00:00:05
 #SBATCH -J bert-inf
