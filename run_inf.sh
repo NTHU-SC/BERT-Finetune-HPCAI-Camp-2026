@@ -1,11 +1,10 @@
 #!/bin/bash
-#SBATCH -p amd
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=16
 #SBATCH --gres=gpu:1
 #SBATCH --partition=cscamp
-#SBATCH --time=00:00:05
+#SBATCH --time=00:01:00
 #SBATCH -J bert-inf
 #SBATCH -o bert-inf.out
 #SBATCH -e bert-inf.err

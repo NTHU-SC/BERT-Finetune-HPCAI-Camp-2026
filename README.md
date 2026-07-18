@@ -1,7 +1,8 @@
 # BERT Finetune — HPCAI Camp (AMD)
 
-This version is for the CSCC AMD environment.  Submit GPU jobs only to the
-`amd` Slurm partition; it provides AMD Radeon AI PRO R9700 GPUs through ROCm.
+This version is for the CSCC camp AMD environment. Submit GPU jobs only through
+the supplied scripts, which request one AMD GPU from the `cscamp` Slurm
+partition.
 
 ## 1. Log in and prepare the project
 
@@ -45,13 +46,23 @@ If Hugging Face asks for authentication, create a read-only token at
 
 ## 3. Train and infer with Slurm
 
-The supplied scripts request one `r9700` GPU in the `amd` partition and use
-16 CPU cores, matching the partition's default CPU-per-GPU allocation.
+The supplied scripts request one GPU and 16 CPU cores in the `cscamp`
+partition. Each job has a one-minute time limit.
+
+The default training configuration was measured on this environment: it uses a
+fixed-seed random sample of 10,000 training examples, 500 separate validation
+examples, five epochs, batch size 128, a learning rate of `5e-5`, and dynamic
+padding to 64 tokens. It keeps the dataset contents unchanged and saves only
+the final model as `checkpoint-final`.
 
 ```bash
 sbatch run_train.sh google-bert/bert-base-uncased ./output_model
-sbatch run_inf.sh ./output_model/checkpoint-13
+sbatch run_inf.sh ./output_model/checkpoint-final
 ```
+
+On a warm cache, the measured training job completed in 51 seconds and the
+inference job in 28 seconds. The measured test accuracy was 40.7051%. Queue
+time is not included and depends on current cluster usage.
 
 The outputs are written to `bert-train.out`, `bert-train.err`,
 `bert-inf.out`, and `bert-inf.err`.  Useful Slurm commands are:
@@ -65,7 +76,7 @@ scancel <job-id>
 For a quick interactive check (not a training run), request an AMD GPU:
 
 ```bash
-srun -p cscamp --gres=gpu:1 -n 1 -c 1 -t 00:00:01 --pty bash
+srun -p cscamp --gres=gpu:1 -n 1 -c 1 -t 00:01:00 --pty bash
 module load rocm/7.2.0
 source "$HOME/venvs/camp-ai/bin/activate"
 python -c 'import torch; print(torch.cuda.is_available(), torch.cuda.get_device_name(0))'
