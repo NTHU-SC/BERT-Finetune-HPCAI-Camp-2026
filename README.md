@@ -47,7 +47,8 @@ If Hugging Face asks for authentication, create a read-only token at
 ## 3. Train and infer with Slurm
 
 The supplied scripts request one GPU and 16 CPU cores in the `cscamp`
-partition. Each job has a one-minute time limit.
+partition. Each job has a five-minute time limit, leaving room for temporary
+slowdown when multiple participants train at once.
 
 The default training configuration was measured on this environment: it uses a
 fixed-seed random sample of 10,000 training examples, 500 separate validation
@@ -76,7 +77,7 @@ scancel <job-id>
 For a quick interactive check (not a training run), request an AMD GPU:
 
 ```bash
-srun -p cscamp --gres=gpu:1 -n 1 -c 1 -t 00:01:00 --pty bash
+srun -p cscamp --gres=gpu:1 -n 1 -c 1 -t 00:05:00 --pty bash
 module load rocm/7.2.0
 source "$HOME/venvs/camp-ai/bin/activate"
 python -c 'import torch; print(torch.cuda.is_available(), torch.cuda.get_device_name(0))'

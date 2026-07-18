@@ -4,7 +4,7 @@
 #SBATCH --cpus-per-task=16
 #SBATCH --gres=gpu:1
 #SBATCH --partition=cscamp
-#SBATCH --time=00:01:00
+#SBATCH --time=00:05:00
 #SBATCH -J bert-train
 #SBATCH -o bert-train.out
 #SBATCH -e bert-train.err
