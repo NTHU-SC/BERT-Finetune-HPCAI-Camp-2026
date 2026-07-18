@@ -65,7 +65,7 @@ scancel <job-id>
 For a quick interactive check (not a training run), request an AMD GPU:
 
 ```bash
-srun -p amd --gres=gpu:r9700:1 --cpus-per-task=16 --pty bash
+srun -p cscamp --gres=gpu:1 -n 1 -c 1 -t 00:00:01 --pty bash
 module load rocm/7.2.0
 source "$HOME/venvs/camp-ai/bin/activate"
 python -c 'import torch; print(torch.cuda.is_available(), torch.cuda.get_device_name(0))'
