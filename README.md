@@ -49,8 +49,8 @@ The supplied scripts request one `r9700` GPU in the `amd` partition and use
 16 CPU cores, matching the partition's default CPU-per-GPU allocation.
 
 ```bash
-sbatch --partition=cscamp run_train.sh google-bert/bert-base-uncased ./output_model
-sbatch --partition=cscamp run_inf.sh ./output_model/checkpoint-13
+sbatch run_train.sh google-bert/bert-base-uncased ./output_model
+sbatch run_inf.sh ./output_model/checkpoint-13
 ```
 
 The outputs are written to `bert-train.out`, `bert-train.err`,
