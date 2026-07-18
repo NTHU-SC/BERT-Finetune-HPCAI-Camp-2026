@@ -9,7 +9,7 @@ This version is for the CSCC AMD environment.  Submit GPU jobs only to the
 ssh CSCC
 cd "$HOME"
 git clone https://github.com/NTHU-SC/BERT-Finetune-HPCAI-Camp-2026.git
-cd BERT-Finetune-HPCAI-Camp
+cd BERT-Finetune-HPCAI-Camp-2026
 ```
 
 All following commands are run from this project directory under your own
