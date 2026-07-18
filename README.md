@@ -3,12 +3,17 @@
 This version is for the CSCC AMD environment.  Submit GPU jobs only to the
 `amd` Slurm partition; it provides AMD Radeon AI PRO R9700 GPUs through ROCm.
 
-## 1. Log in and enter the project
+## 1. Log in and prepare the project
 
 ```bash
 ssh CSCC
-cd /home/user/opal/camp/BERT-Finetune-HPCAI-Camp
+cd "$HOME"
+git clone https://github.com/NTHU-SC/BERT-Finetune-HPCAI-Camp.git
+cd BERT-Finetune-HPCAI-Camp
 ```
+
+All following commands are run from this project directory under your own
+`$HOME`; do not work in another participant's directory.
 
 ## 2. Create a personal Python environment
 
