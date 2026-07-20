@@ -1,62 +1,44 @@
-# BERT 微調實作：HPCAI Camp AMD 環境
+# BERT Finetune - HPCAI Camp
 
-這個實作會帶你把預訓練好的 BERT，微調成能辨識推文情緒的三分類
-模型（negative、neutral、positive）。你不需要從零訓練模型；重點是理解
-資料、超參數、GPU 與 Slurm 如何一起影響一次實驗的結果。
+[toc]
 
-完成本教學後，你應該能夠：
+## 總覽
 
-- 在 CSCC 的 AMD GPU 節點建立自己的 Python 環境。
-- 用 Slurm 送出訓練與推論工作，而不是佔用登入節點。
-- 從輸出檔判斷工作是否成功、讀出 accuracy 與 checkpoint。
-- 有系統地調整訓練資料量、batch size、epoch、learning rate 等設定。
+- 環境設置：在 CSCC 的 AMD GPU 環境建立自己的 Python virtual environment。
+- 使用 Slurm 提交訓練與推論工作。
+- **主要操作：調整 learning rate、batch size、training epoch、訓練資料量等超參數。**
+- 目標：在不更換模型與資料集的前提下，提升 test accuracy。
+- Tips：使用 `tmux` 可以避免 SSH 斷線時中斷正在做的安裝或查看工作。
 
-> 遇到問題時，先保留 `bert-train.err`、`bert-train.out`，再向隊輔或助教求助。
-> 這兩個檔案通常比只貼終端機最後一行更容易找出問題。
+> 操作過程中遇到任何問題，請保留 `bert-train.out`、`bert-train.err`，再詢問
+> 隊輔或助教。這兩個檔案通常能顯示完整的錯誤原因。
 
-## 先認識這個專案
+## 環境設置
 
-專案根目錄中的檔案各自負責不同工作：
-
-```text
-.
-├── Train.py        # 載入資料、微調 BERT、驗證並儲存模型
-├── Inference.py    # 使用訓練好的模型在測試集計算 accuracy
-├── run_train.sh    # 向 Slurm 申請 GPU 後執行 Train.py
-├── run_inf.sh      # 向 Slurm 申請 GPU 後執行 Inference.py
-└── README.md       # 本教學
-```
-
-資料集是 `mteb/tweet_sentiment_extraction`。`Train.py` 會依固定 seed 將
-訓練集分成兩個不重疊的部分：預設使用 10,000 筆做訓練、500 筆做驗證。
-驗證集的 accuracy 會在每個 epoch 後寫進訓練輸出；最後的真正成績則由
-`Inference.py` 在完整 test split 上計算。
-
-本活動中請遵守以下限制：不要更換 BERT 模型、資料集或資料內容，也不要
-修改 `Inference.py`。可以調整訓練策略和超參數，並在報告中說明實驗過程。
-
-## 第一次使用：建立自己的環境
-
-請在自己的 home directory 工作。以下的 `$HOME` 會自動代表你的 home
-directory，因此不要把它換成其他同學的路徑。
-
-先登入 CSCC，下載專案：
+### 1. 登入 CSCC
 
 ```bash
 ssh CSCC
-cd "$HOME"
-git clone https://github.com/NTHU-SC/BERT-Finetune-HPCAI-Camp-2026.git
-cd BERT-Finetune-HPCAI-Camp-2026
 ```
 
-接著建立只屬於自己的 virtual environment。這個步驟只需做一次；日後只要
-重新啟用它即可。
+之後所有檔案都請放在自己的 home directory。`$HOME` 會自動代表你的目錄，
+請不要使用其他同學的路徑。
+
+### 2. 建立個人 Python 環境並安裝套件
+
+以下只需執行一次。它會在自己的 home directory 建立環境，不會修改系統 Python
+或其他人的環境。
 
 ```bash
 module load rocm/7.2.0
 python3 -m venv "$HOME/venvs/camp-ai"
 source "$HOME/venvs/camp-ai/bin/activate"
 
+# 確認目前使用的是自己的環境
+which pip
+which python
+
+# 安裝套件
 python -m pip install --upgrade pip
 python -m pip install torch==2.12.1 torchvision==0.27.1 \
   --index-url https://download.pytorch.org/whl/rocm7.2
@@ -64,25 +46,44 @@ python -m pip install transformers datasets scikit-learn evaluate accelerate \
   --upgrade huggingface_hub
 ```
 
-確認目前使用的是剛建立的環境，而不是系統 Python：
+確認安裝：
 
 ```bash
-which python
-python -c 'import torch, transformers; print(torch.__version__); print(transformers.__version__)'
+python -c 'import torch; print(torch.__version__); print(torch.version.hip)'
+python -c 'import transformers; print(transformers.__version__)'
 ```
 
-`which python` 的結果應該位於 `$HOME/venvs/camp-ai/` 下方。若 Hugging Face
-要求登入，請到 <https://huggingface.co/settings/tokens> 建立 read-only token，
-再執行：
+若 Hugging Face 要求登入，請到 <https://huggingface.co/settings/tokens> 建立一個
+read-only token，然後執行：
 
 ```bash
 huggingface-cli login
 ```
 
-### 為什麼登入後還看不到 GPU？
+### 3. 準備腳本
 
-登入節點是用來編輯檔案、安裝套件與提交工作，不是用來跑訓練的地方。GPU
-由 Slurm 管理，所以要先取得資源配置。可用下面指令做一次互動式檢查：
+下載本次營隊使用的 repository：
+
+```bash
+cd "$HOME"
+git clone https://github.com/NTHU-SC/BERT-Finetune-HPCAI-Camp-2026.git
+cd BERT-Finetune-HPCAI-Camp-2026
+```
+
+相關檔案介紹：
+
+```text
+├── Train.py          # 訓練腳本
+├── Inference.py      # 推論與 accuracy 計算腳本
+├── run_train.sh      # Slurm 訓練工作腳本
+└── run_inf.sh        # Slurm 推論工作腳本
+```
+
+- `Train.py` 和 `Inference.py` 是主要程式。
+- `run_train.sh` 和 `run_inf.sh` 會向 Slurm 的 `cscamp` partition 申請一張 AMD GPU。
+- 每個工作會申請 16 個 CPU core，最長執行五分鐘。
+
+第一次使用 GPU 時，可以先用互動式工作確認 ROCm PyTorch 正常：
 
 ```bash
 srun -p cscamp --gres=gpu:1 -n 1 -c 1 -t 00:05:00 --pty bash
@@ -92,94 +93,106 @@ python -c 'import torch; print(torch.cuda.is_available()); print(torch.cuda.get_
 exit
 ```
 
-ROCm 版 PyTorch 仍沿用 `torch.cuda` 這個 API 名稱；第一行輸出 `True` 即表示
-程式已經看得到 AMD GPU。
+ROCm 版 PyTorch 仍使用 `torch.cuda` 這個 API 名稱；看到 `True` 即表示 GPU 可用。
 
-## 第一次訓練：把工作交給 Slurm
+### 4. 送出工作開始訓練
 
-回到專案根目錄後，執行：
+先確認目前位置在 repository 內：
+
+```bash
+cd "$HOME/BERT-Finetune-HPCAI-Camp-2026"
+```
+
+使用 Slurm 送出訓練工作：
+
+```bash
+sbatch run_train.sh <model_path> <output_dir>
+```
+
+- `model_path`：要訓練的 model 名稱或路徑。
+- `output_dir`：訓練完成後存放 checkpoint 的目錄。
+
+範例：
 
 ```bash
 sbatch run_train.sh google-bert/bert-base-uncased ./output_model
 ```
 
-這不是立刻在目前終端機執行訓練，而是提交一個 batch job。`run_train.sh` 會
-申請 `cscamp` partition 的一張 GPU、16 個 CPU core，並給工作最長五分鐘的
-執行時間。第一次使用某個模型或資料集時，下載與建立快取可能較慢；之後通常
-會快很多。
-
-提交成功後會看到類似：
+提交成功會看到：
 
 ```text
-Submitted batch job 123456
+Submitted batch job <job-id>
 ```
 
-這個數字是 job ID。常用的觀察方式如下：
+訓練完成後會出現：
+
+- `bert-train.out`：訓練輸出、每個 epoch 的 `eval_accuracy` 與 training config。
+- `bert-train.err`：警告與錯誤訊息。
+- `./output_model/checkpoint-final`：訓練好的最終模型。
+
+可用以下指令查看：
 
 ```bash
-# 查看自己正在排隊或執行的工作
-squeue -u "$USER"
-
-# 查看工作完成後的狀態與實際資源使用情形
-sacct -j 123456
-
-# 取消尚未結束的工作
-scancel 123456
-```
-
-工作結束後，Slurm 會在專案根目錄寫出：
-
-- `bert-train.out`：訓練進度、驗證 accuracy、訓練設定與 checkpoint 資訊。
-- `bert-train.err`：警告與錯誤訊息；工作失敗時先從這裡開始看。
-- `output_model/checkpoint-final`：本次訓練完成後儲存的模型。
-
-可以用以下指令快速查看結果：
-
-```bash
-tail -n 60 bert-train.out
-tail -n 60 bert-train.err
+cat bert-train.out
+cat bert-train.err
 ls ./output_model/checkpoint-final
 ```
 
-訓練輸出中的 `eval_accuracy` 是保留的 validation split 結果，用來比較實驗
-方向是否有幫助；它不是最後繳交成績。每次訓練開始時也會印出 `Training Config:`，
-請保留這一段，因為它記錄了本次實驗真正使用的設定。
+若要直接執行 Python 版本，請先透過 `srun` 取得 GPU，再在該 shell 中執行：
 
-## 執行推論並取得成績
+```bash
+python Train.py --model google-bert/bert-base-uncased --output ./output_model
+```
 
-模型訓練完成後，將 checkpoint 提供給推論腳本：
+### 5. 送出工作開始推論
+
+確認訓練完成後，使用剛剛的 checkpoint 送出推論工作：
 
 ```bash
 sbatch run_inf.sh ./output_model/checkpoint-final
 ```
 
-完成後查看：
+或是在已取得 GPU 的互動式 shell 中直接執行：
+
+```bash
+python Inference.py --model ./output_model/checkpoint-final
+```
+
+推論完成後查看：
 
 ```bash
 cat bert-inf.out
 cat bert-inf.err
 ```
 
-`bert-inf.out` 中的 `The generation accuracy is ...` 是完整 test split 的
-accuracy。先前在 warm cache 的參考執行中，預設設定的訓練工作約需 51 秒、
-推論工作約需 28 秒，test accuracy 為 40.7051%。這些數字會隨當下排程、首次
-下載與 GPU 使用狀況而變動，請以自己的輸出檔為準。
+`bert-inf.out` 裡的 `The generation accuracy is ...` 就是完整 test split 的
+accuracy。預設設定在 warm cache 的參考執行中，訓練約需 51 秒、推論約需 28 秒，
+test accuracy 為 40.7051%；首次下載模型、資料集或多人同時使用 GPU 時，時間可能
+較長。
 
-## 怎麼開始調參？
+## 目標
 
-好的實驗不是一次改很多東西，而是先建立一個可重現的 baseline，再一次只改
-一到兩個因素。`Train.py` 提供下列參數：
+> Accuracy 越高越好！
 
-| 參數 | 預設值 | 影響 |
-| --- | ---: | --- |
-| `--train-samples` | 10000 | 使用多少筆資料訓練；越多通常越完整，但更花時間。 |
-| `--eval-samples` | 500 | 保留多少筆做 validation，不會加入訓練。 |
-| `--batch-size` | 128 | 每次更新所用的樣本數；過大可能耗盡 GPU 記憶體。 |
-| `--epochs` | 5 | 完整看過訓練資料的次數；太多可能過度擬合。 |
-| `--learning-rate` | `5e-5` | 每次更新的步伐；過大可能不穩，過小可能學得太慢。 |
-| `--seed` | 42 | 控制抽樣與初始化的隨機性，方便重現結果。 |
+請透過 `Train.py` 微調 BERT。可以嘗試：
 
-在取得 GPU 的互動式 shell 中，可直接嘗試不同參數。例如：
+- 調整 hyperparameters。
+- 調整訓練資料量與 validation 資料量。
+- 調整 training epoch、batch size、learning rate。
+- 調整 optimizer 或其他訓練策略。
+
+目前 `Train.py` 可使用的參數如下：
+
+```text
+--train-samples   預設 10000
+--eval-samples    預設 500
+--batch-size      預設 128
+--epochs          預設 5
+--learning-rate   預設 5e-5
+--seed            預設 42
+```
+
+例如，在互動式 GPU shell 中嘗試不同設定：
 
 ```bash
 python Train.py \
@@ -189,34 +202,50 @@ python Train.py \
   --epochs 4
 ```
 
-建議的實驗節奏是：
+建議一次只改一到兩個設定，並為每次實驗使用不同的 output directory。這樣較容易
+比較 `eval_accuracy`，也不會覆蓋之前的 checkpoint。若發生 GPU out-of-memory，
+先將 `--batch-size` 降為 64 或 32。
 
-1. 先跑預設設定，確認訓練、checkpoint 與推論流程都正確。
-2. 用較少的 `--train-samples` 或 `--epochs` 快速探索方向。
-3. 選出 validation accuracy 較佳的少數設定，再用較完整的資料量重跑。
-4. 對候選 checkpoint 執行 `Inference.py`，以 test accuracy 做最後比較。
+請注意：
 
-每個實驗請使用不同的 `--output` 目錄，例如 `./experiment-bs64`、
-`./experiment-epoch3`。這樣 checkpoint 不會互相覆蓋，也能回頭比較輸出。
-若發生 CUDA out-of-memory，先降低 `--batch-size`，例如從 128 改成 64 或 32。
+- 不可以更換 model（BERT）與 dataset。
+- 不可以手動修改資料內容。
+- 不可以修改 `Inference.py`。
 
-## 除錯小抄
+## Report
 
-| 現象 | 先做什麼 |
-| --- | --- |
-| job 一直是 `PENDING` | 用 `squeue -u "$USER"` 查看原因；通常是在等 GPU。 |
-| job 顯示 `FAILED` 或 `TIMEOUT` | 用 `sacct -j <job-id>` 搭配 `bert-*.err` 確認原因。 |
-| `torch.cuda.is_available()` 是 `False` | 確認在 Slurm 配置內、已 `module load rocm/7.2.0`，並啟用自己的 venv。 |
-| 找不到模型或資料集 | 檢查網路／Hugging Face token，之後重新送出工作。 |
-| GPU 記憶體不足 | 降低 `--batch-size`，再重新訓練。 |
+報告你調整和優化的內容，沒有固定格式，但至少應說明：
 
-## 繳交前檢查
+- 調整了哪些參數？
+- 使用了哪些技巧？
+- 每次實驗的 accuracy 與花費時間？
+- 如何分配嘗試次數與 training 時間？
+- 最後為什麼選擇這個模型繳交？
 
-請確認保留以下檔案：
+## 繳交檔案
 
 - `bert-inf.out`
 - `bert-inf.err`
-- 一份可閱讀的報告（例如 HackMD 連結）
+- report：提供可閱讀的 HackMD 連結
 
-報告不需要固定格式，但至少應說明：你嘗試了哪些設定、每個設定的結果、如何
-選出最後模型，以及遇到的問題和解法。請以活動公告的繳交方式為準。
+請依活動公告的繳交方式上傳。若不是透過 Slurm 執行推論，可把輸出同時寫入檔案：
+
+```bash
+python Inference.py --model <model_path> 2>&1 | tee bert-inf.out
+```
+
+## 附錄：常用 Slurm 指令
+
+```bash
+# 查看自己的工作
+squeue -u "$USER"
+
+# 查看指定工作狀態與資源使用情形
+sacct -j <job-id>
+
+# 取消正在排隊或執行的工作
+scancel <job-id>
+```
+
+`PENDING` 表示正在等資源，`RUNNING` 表示正在執行，`COMPLETED` 表示工作成功。
+如果看到 `FAILED` 或 `TIMEOUT`，請先查看 `bert-train.err` 或 `bert-inf.err`。
