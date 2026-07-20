@@ -13,6 +13,12 @@
 > 操作過程中遇到任何問題，請保留 `bert-train.out`、`bert-train.err`，再詢問
 > 隊輔或助教。這兩個檔案通常能顯示完整的錯誤原因。
 
+### 給初學者：Google Colab 版本
+
+若課程不使用 CSCC／Slurm，可直接在瀏覽器開啟
+[BERT Colab 初學者實作](https://colab.research.google.com/github/NTHU-SC/BERT-Finetune-HPCAI-Camp-2026/blob/main/BERT_Finetune_Beginner_Colab.ipynb)。
+它會帶你開啟 Colab GPU、訓練、測試並下載繳交檔案。
+
 ## 環境設置
 
 ### 1. 登入 CSCC
