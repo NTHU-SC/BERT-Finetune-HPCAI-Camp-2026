@@ -228,7 +228,8 @@ python Train.py \
 - `bert-inf.err`
 - report：提供可閱讀的 HackMD 連結
 
-請依活動公告的繳交方式上傳。若不是透過 Slurm 執行推論，可把輸出同時寫入檔案：
+請透過[營隊繳交 Google 表單](https://docs.google.com/forms/d/e/1FAIpQLSfMzM9dPfWS5OMAoQ8md5lQY9zLLyE1xfyPTL8en3Ko7M73Rg/viewform?usp=publish-editor)上傳。
+若不是透過 Slurm 執行推論，可把輸出同時寫入檔案：
 
 ```bash
 python Inference.py --model <model_path> 2>&1 | tee bert-inf.out
