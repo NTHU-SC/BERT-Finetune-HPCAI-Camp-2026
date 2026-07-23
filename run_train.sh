@@ -19,9 +19,8 @@ source /etc/profile.d/modules.sh
 module purge
 module load miniconda3/conda24.5.0_py3.9
 
-: "${WORK:?WORK must be set on TWCC}"
-CAMP_ENV="${CAMP_ENV:-$WORK/venvs/camp-ai}"
-export HF_HOME="${HF_HOME:-$WORK/.cache/huggingface}"
+CAMP_ENV="${CAMP_ENV:-$HOME/venvs/camp-ai}"
+export HF_HOME="${HF_HOME:-$HOME/.cache/huggingface}"
 
 if [[ ! -x "$CAMP_ENV/bin/python" ]]; then
     echo "Missing camp environment: $CAMP_ENV" >&2
