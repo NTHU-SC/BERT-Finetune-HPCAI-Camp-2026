@@ -10,6 +10,8 @@
 * 目標：在不更換 BERT model 與 dataset 的前提下，達到超過基準準確率（30.95%）的表現。
 * Tips：使用 `tmux`，避免訓練過程因 SSH 斷線而中斷。
 
+沒有 TWCC 帳號的營隊可直接使用 [Google Colab 版本](https://colab.research.google.com/github/NTHU-SC/BERT-Finetune-HPCAI-Camp-2026/blob/main/BERT_Finetune_Lab_Colab.ipynb)。它不需要填空，會在 Colab GPU 上完成相同的 BERT 微調與調參練習。
+
 > 操作過程中遇到問題，請保留 `bert-train.out`、`bert-train.err`、`bert-inf.out` 與 `bert-inf.err`，再詢問隊輔或助教。
 
 ## 環境設置
