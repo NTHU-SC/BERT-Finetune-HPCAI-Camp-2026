@@ -1,7 +1,7 @@
 #!/bin/bash
 # TWCC account. Override it at submission time when using another project:
 #   sbatch -A <project-id> run_inf.sh ...
-#SBATCH --account=ACD110018
+#SBATCH --account=GOV115003
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1
 #SBATCH --cpus-per-task=4

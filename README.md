@@ -12,7 +12,7 @@ echo "$WORK"
 sacctmgr -n show user "$USER" format=User,Account  # 若此指令可用
 ```
 
-這份 repo 預設使用 `ACD110018`。若你有不同的 project，提交時以 `sbatch -A <project-id> ...` 覆寫即可。
+這份 repo 預設使用 `GOV115003`。若你有不同的 project，提交時以 `sbatch -A <project-id> ...` 覆寫即可。
 
 ## 1. 建立固定版本的環境
 
@@ -60,7 +60,7 @@ huggingface-cli login
 只能在 GPU node 上檢查 CUDA。以下指令會建立一個很短的互動式工作：
 
 ```bash
-srun -A ACD110018 -p gp1d --gres=gpu:1 -n 1 -c 4 -t 00:05:00 --pty bash
+srun -A GOV115003 -p gp1d --gres=gpu:1 -n 1 -c 4 -t 00:05:00 --pty bash
 module load miniconda3/conda24.5.0_py3.9
 conda activate "$WORK/venvs/camp-ai"
 python -c 'import torch; print(torch.__version__); print(torch.cuda.is_available()); print(torch.cuda.get_device_name(0))'
