@@ -1,258 +1,139 @@
-# BERT Finetune - HPCAI Camp
+# BERT Finetune - HPCAI Camp 2026（TWCC）
 
-[toc]
+本版流程適用於台灣杉二號的 `twcc` login node 與 NVIDIA `gp1d` GPU partition。所有專案、Python 環境與 Hugging Face cache 都放在 `$WORK`；不要在 login node 上直接訓練或推論。
 
-## 總覽
+## 先決條件
 
-- 環境設置：在 CSCC 的 AMD GPU 環境建立自己的 Python virtual environment。
-- 使用 Slurm 提交訓練與推論工作。
-- **主要操作：調整 learning rate、batch size、training epoch、訓練資料量等超參數。**
-- 目標：在不更換模型與資料集的前提下，提升 test accuracy。
-- Tips：使用 `tmux` 可以避免 SSH 斷線時中斷正在做的安裝或查看工作。
-
-> 操作過程中遇到任何問題，請保留 `bert-train.out`、`bert-train.err`，再詢問
-> 隊輔或助教。這兩個檔案通常能顯示完整的錯誤原因。
-
-### 給初學者：Google Colab 版本
-
-若課程不使用 CSCC／Slurm，可直接在瀏覽器開啟
-[BERT Colab 初學者實作](https://colab.research.google.com/github/NTHU-SC/BERT-Finetune-HPCAI-Camp-2026/blob/main/BERT_Finetune_Beginner_Colab.ipynb)。
-它會帶你開啟 Colab GPU、訓練、測試並下載繳交檔案。
-
-## 環境設置
-
-### 1. 登入 CSCC
+登入後確認工作空間與可用 Slurm project：
 
 ```bash
-ssh CSCC
+ssh twcc
+echo "$WORK"
+sacctmgr -n show user "$USER" format=User,Account  # 若此指令可用
 ```
 
-之後所有檔案都請放在自己的 home directory。`$HOME` 會自動代表你的目錄，
-請不要使用其他同學的路徑。
+這份 repo 預設使用 `ACD110018`。若你有不同的 project，提交時以 `sbatch -A <project-id> ...` 覆寫即可。
 
-### 2. 建立個人 Python 環境並安裝套件
+## 1. 建立固定版本的環境
 
-以下只需執行一次。它會在自己的 home directory 建立環境，不會修改系統 Python
-或其他人的環境。
+下列指令只需執行一次。請不要使用 `conda create ... python` 或 `pip install torch` 的「最新版本」：目前會安裝 Python 3.14 與 CUDA 13 的 PyTorch，和 `gp1d` 的 NVIDIA driver 不相容。
 
 ```bash
-module load rocm/7.2.0
-python3 -m venv "$HOME/venvs/camp-ai"
-source "$HOME/venvs/camp-ai/bin/activate"
+module load miniconda3/conda24.5.0_py3.9
 
-# 確認目前使用的是自己的環境
-which pip
-which python
+export CAMP_ENV="$WORK/venvs/camp-ai"
+export CONDA_PKGS_DIRS="$WORK/.conda/pkgs"
+conda create --yes --prefix "$CAMP_ENV" python=3.12
+conda activate "$CAMP_ENV"
 
-# 安裝套件
 python -m pip install --upgrade pip
-python -m pip install torch==2.12.1 torchvision==0.27.1 \
-  --index-url https://download.pytorch.org/whl/rocm7.2
-python -m pip install transformers datasets scikit-learn evaluate accelerate \
-  --upgrade huggingface_hub
+python -m pip install torch==2.5.1 --index-url https://download.pytorch.org/whl/cu121
 ```
 
-確認安裝：
+`torch==2.5.1` 的 CUDA 12.1 wheel 可在 `gp1d` 的 CUDA 12.2 driver 上使用。
+
+## 2. 取得程式碼與設定快取
 
 ```bash
-python -c 'import torch; print(torch.__version__); print(torch.version.hip)'
-python -c 'import transformers; print(transformers.__version__)'
+cd "$WORK"
+git clone https://github.com/NTHU-SC/BERT-Finetune-HPCAI-Camp-2026.git
+cd BERT-Finetune-HPCAI-Camp-2026
+
+module load miniconda3/conda24.5.0_py3.9
+conda activate "$WORK/venvs/camp-ai"
+python -m pip install -r requirements.txt
+
+# 讓模型與資料集快取也留在 $WORK。
+export HF_HOME="$WORK/.cache/huggingface"
 ```
 
-若 Hugging Face 要求登入，請到 <https://huggingface.co/settings/tokens> 建立一個
-read-only token，然後執行：
+`requirements.txt` 釘選其餘相容套件版本，請不要自行把其中任何一項升級到最新 major version。
+
+若 Hugging Face 要求登入，建立 read-only token 後執行：
 
 ```bash
 huggingface-cli login
 ```
 
-### 3. 準備腳本
+## 3. 確認 GPU 環境
 
-下載本次營隊使用的 repository：
-
-```bash
-cd "$HOME"
-git clone https://github.com/NTHU-SC/BERT-Finetune-HPCAI-Camp-2026.git
-cd BERT-Finetune-HPCAI-Camp-2026
-```
-
-相關檔案介紹：
-
-```text
-├── Train.py          # 訓練腳本
-├── Inference.py      # 推論與 accuracy 計算腳本
-├── run_train.sh      # Slurm 訓練工作腳本
-└── run_inf.sh        # Slurm 推論工作腳本
-```
-
-- `Train.py` 和 `Inference.py` 是主要程式。
-- `run_train.sh` 和 `run_inf.sh` 會向 Slurm 的 `cscamp` partition 申請一張 AMD GPU。
-- 每個工作會申請 16 個 CPU core，最長執行五分鐘。
-
-第一次使用 GPU 時，可以先用互動式工作確認 ROCm PyTorch 正常：
+只能在 GPU node 上檢查 CUDA。以下指令會建立一個很短的互動式工作：
 
 ```bash
-srun -p cscamp --gres=gpu:1 -n 1 -c 1 -t 00:05:00 --pty bash
-module load rocm/7.2.0
-source "$HOME/venvs/camp-ai/bin/activate"
-python -c 'import torch; print(torch.cuda.is_available()); print(torch.cuda.get_device_name(0))'
+srun -A ACD110018 -p gp1d --gres=gpu:1 -n 1 -c 4 -t 00:05:00 --pty bash
+module load miniconda3/conda24.5.0_py3.9
+conda activate "$WORK/venvs/camp-ai"
+python -c 'import torch; print(torch.__version__); print(torch.cuda.is_available()); print(torch.cuda.get_device_name(0))'
 exit
 ```
 
-ROCm 版 PyTorch 仍使用 `torch.cuda` 這個 API 名稱；看到 `True` 即表示 GPU 可用。
+最後一行必須輸出 GPU 型號，且 `torch.cuda.is_available()` 必須是 `True`。若是 `False`，請重新依照第 1 節安裝固定的 CUDA 12.1 PyTorch，不要開始訓練。
 
-### 4. 送出工作開始訓練
+## 4. 使用 Slurm 訓練
 
-先確認目前位置在 repository 內：
-
-```bash
-cd "$HOME/BERT-Finetune-HPCAI-Camp-2026"
-```
-
-使用 Slurm 送出訓練工作：
+在 repo 目錄中執行：
 
 ```bash
-sbatch run_train.sh <model_path> <output_dir>
-```
-
-- `model_path`：要訓練的 model 名稱或路徑。
-- `output_dir`：訓練完成後存放 checkpoint 的目錄。
-
-範例：
-
-```bash
+export CAMP_ENV="$WORK/venvs/camp-ai"
+export HF_HOME="$WORK/.cache/huggingface"
 sbatch run_train.sh google-bert/bert-base-uncased ./output_model
 ```
 
-提交成功會看到：
-
-```text
-Submitted batch job <job-id>
-```
-
-訓練完成後會出現：
-
-- `bert-train.out`：訓練輸出、每個 epoch 的 `eval_accuracy` 與 training config。
-- `bert-train.err`：警告與錯誤訊息。
-- `./output_model/checkpoint-final`：訓練好的最終模型。
-
-可用以下指令查看：
+若使用不同 project：
 
 ```bash
-cat bert-train.out
-cat bert-train.err
-ls ./output_model/checkpoint-final
+sbatch -A <project-id> run_train.sh google-bert/bert-base-uncased ./output_model
 ```
 
-若要直接執行 Python 版本，請先透過 `srun` 取得 GPU，再在該 shell 中執行：
+輸出檔：
+
+- `bert-train.out`：training config、訓練與 validation accuracy。
+- `bert-train.err`：warning 與 error。
+- `output_model/checkpoint-final`：最後訓練完成的模型。
+
+預設會使用 10,000 筆 train、500 筆 validation。可調整參數：
 
 ```bash
-python Train.py --model google-bert/bert-base-uncased --output ./output_model
+sbatch run_train.sh google-bert/bert-base-uncased ./experiment-lr3e-5 \
+  --learning-rate 3e-5 --epochs 4
 ```
 
-### 5. 送出工作開始推論
+可用參數為：`--train-samples`、`--eval-samples`、`--batch-size`、`--epochs`、`--learning-rate`、`--seed`。每次實驗請用新的 output directory，避免覆寫模型。
 
-確認訓練完成後，使用剛剛的 checkpoint 送出推論工作：
+> `run_train.sh` 會將其後的所有參數傳給 `Train.py`。第一個參數是 model、第二個參數是 output directory。
+
+## 5. 使用 Slurm 推論
+
+訓練完成後：
 
 ```bash
 sbatch run_inf.sh ./output_model/checkpoint-final
 ```
 
-或是在已取得 GPU 的互動式 shell 中直接執行：
-
-```bash
-python Inference.py --model ./output_model/checkpoint-final
-```
-
-推論完成後查看：
+查看結果：
 
 ```bash
 cat bert-inf.out
 cat bert-inf.err
 ```
 
-`bert-inf.out` 裡的 `The generation accuracy is ...` 就是完整 test split 的
-accuracy。預設設定在 warm cache 的參考執行中，訓練約需 51 秒、推論約需 28 秒，
-test accuracy 為 40.7051%；首次下載模型、資料集或多人同時使用 GPU 時，時間可能
-較長。
+`bert-inf.out` 中的 `The generation accuracy is ...` 是 test split accuracy。
 
-## 目標
+## 規則與繳交
 
-> Accuracy 越高越好！
+- 不可更換 BERT model 或 dataset。
+- 不可手動修改資料內容。
+- 不可修改 `Inference.py`。
+- 繳交 `bert-inf.out`、`bert-inf.err` 與可閱讀的 HackMD report。
 
-請透過 `Train.py` 微調 BERT。可以嘗試：
+Report 至少說明調整的參數、每次實驗的 accuracy／耗時與最後選擇。
 
-- 調整 hyperparameters。
-- 調整訓練資料量與 validation 資料量。
-- 調整 training epoch、batch size、learning rate。
-- 調整 optimizer 或其他訓練策略。
-
-目前 `Train.py` 可使用的參數如下：
-
-```text
---train-samples   預設 10000
---eval-samples    預設 500
---batch-size      預設 128
---epochs          預設 5
---learning-rate   預設 5e-5
---seed            預設 42
-```
-
-例如，在互動式 GPU shell 中嘗試不同設定：
+## 常用 Slurm 指令
 
 ```bash
-python Train.py \
-  --model google-bert/bert-base-uncased \
-  --output ./experiment-lr3e-5 \
-  --learning-rate 3e-5 \
-  --epochs 4
-```
-
-建議一次只改一到兩個設定，並為每次實驗使用不同的 output directory。這樣較容易
-比較 `eval_accuracy`，也不會覆蓋之前的 checkpoint。若發生 GPU out-of-memory，
-先將 `--batch-size` 降為 64 或 32。
-
-請注意：
-
-- 不可以更換 model（BERT）與 dataset。
-- 不可以手動修改資料內容。
-- 不可以修改 `Inference.py`。
-
-## Report
-
-報告你調整和優化的內容，沒有固定格式，但至少應說明：
-
-- 調整了哪些參數？
-- 使用了哪些技巧？
-- 每次實驗的 accuracy 與花費時間？
-- 如何分配嘗試次數與 training 時間？
-- 最後為什麼選擇這個模型繳交？
-
-## 繳交檔案
-
-- `bert-inf.out`
-- `bert-inf.err`
-- report：提供可閱讀的 HackMD 連結
-
-請透過[營隊繳交 Google 表單](https://docs.google.com/forms/d/e/1FAIpQLSfMzM9dPfWS5OMAoQ8md5lQY9zLLyE1xfyPTL8en3Ko7M73Rg/viewform?usp=publish-editor)上傳。
-若不是透過 Slurm 執行推論，可把輸出同時寫入檔案：
-
-```bash
-python Inference.py --model <model_path> 2>&1 | tee bert-inf.out
-```
-
-## 附錄：常用 Slurm 指令
-
-```bash
-# 查看自己的工作
 squeue -u "$USER"
-
-# 查看指定工作狀態與資源使用情形
 sacct -j <job-id>
-
-# 取消正在排隊或執行的工作
 scancel <job-id>
 ```
 
-`PENDING` 表示正在等資源，`RUNNING` 表示正在執行，`COMPLETED` 表示工作成功。
-如果看到 `FAILED` 或 `TIMEOUT`，請先查看 `bert-train.err` 或 `bert-inf.err`。
+若工作失敗，先閱讀對應的 `bert-train.err` 或 `bert-inf.err`。

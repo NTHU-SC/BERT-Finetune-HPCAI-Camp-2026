@@ -14,7 +14,12 @@ def main(args):
     set_seed(args.seed)
 
     # load model
-    device = "cuda:0" if torch.cuda.is_available() else "cpu"
+    if not torch.cuda.is_available():
+        raise RuntimeError(
+            "CUDA GPU is unavailable. Run this script through run_train.sh after "
+            "following the TWCC environment setup in README.md."
+        )
+    device = "cuda:0"
     tokenizer = AutoTokenizer.from_pretrained(args.model, trust_remote_code=True)
     model = AutoModelForSequenceClassification.from_pretrained(args.model, trust_remote_code=True, num_labels=3,
                                                                 id2label=id2label, label2id=label2id, low_cpu_mem_usage=True,

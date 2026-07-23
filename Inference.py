@@ -7,16 +7,26 @@ from datasets import load_dataset
 
 def main(args):
     # load dataset
-    device = "cuda:0" if torch.cuda.is_available() else "cpu"
+    if not torch.cuda.is_available():
+        raise RuntimeError(
+            "CUDA GPU is unavailable. Run this script through run_inf.sh after "
+            "following the TWCC environment setup in README.md."
+        )
+    device = "cuda:0"
     test_dataset = load_dataset("mteb/tweet_sentiment_extraction", split="test")
 
     print(f"length of dataset is {len(test_dataset)}")
 
     # inference
     tokenizer = AutoTokenizer.from_pretrained(args.model, trust_remote_code=True)
-    model = AutoModelForSequenceClassification.from_pretrained(args.model, num_labels=3, trust_remote_code=True,
-                                                                low_cpu_mem_usage=True, device_map=device
-                                                            )
+    model = AutoModelForSequenceClassification.from_pretrained(
+        args.model,
+        num_labels=3,
+        trust_remote_code=True,
+        low_cpu_mem_usage=True,
+    )
+    model.to(device)
+    model.eval()
 
     correct_count = 0
     start_time = time.time()

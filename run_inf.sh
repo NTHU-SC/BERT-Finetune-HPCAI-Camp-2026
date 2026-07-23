@@ -1,28 +1,36 @@
 #!/bin/bash
+# TWCC account. Override it at submission time when using another project:
+#   sbatch -A <project-id> run_inf.sh ...
+#SBATCH --account=ACD110018
 #SBATCH --nodes=1
-#SBATCH --ntasks=1
-#SBATCH --cpus-per-task=16
+#SBATCH --ntasks-per-node=1
+#SBATCH --cpus-per-task=4
 #SBATCH --gres=gpu:1
-#SBATCH --partition=cscamp
-#SBATCH --time=00:05:00
+#SBATCH --partition=gp1d
+#SBATCH --time=00:15:00
 #SBATCH -J bert-inf
 #SBATCH -o bert-inf.out
 #SBATCH -e bert-inf.err
 
+set -eo pipefail
+
 # Slurm batch shells do not source the login profile that defines `module`.
 source /etc/profile.d/modules.sh
 module purge
-module load rocm/7.2.0
+module load miniconda3/conda24.5.0_py3.9
 
-if [[ -z "${VIRTUAL_ENV:-}" ]]; then
-    # The camp environment is created once with the commands in README.md.
-    source "$HOME/venvs/camp-ai/bin/activate"
+: "${WORK:?WORK must be set on TWCC}"
+CAMP_ENV="${CAMP_ENV:-$WORK/venvs/camp-ai}"
+export HF_HOME="${HF_HOME:-$WORK/.cache/huggingface}"
+
+if [[ ! -x "$CAMP_ENV/bin/python" ]]; then
+    echo "Missing camp environment: $CAMP_ENV" >&2
+    echo "Follow README.md section 1 before submitting a job." >&2
+    exit 1
 fi
 
-model_flag=""
+conda activate "$CAMP_ENV"
 
-if [[ $1 != "" ]]; then
-    model_flag="--model $1"
-fi
+model="${1:-google-bert/bert-base-uncased}"
 
-python Inference.py $model_flag
+python Inference.py --model "$model"
